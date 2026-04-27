@@ -106,12 +106,15 @@ class VQAOptimizer:
             options={'maxiter': max_iterations, 'rhobeg': 0.5, 'tol': tolerance}
         )
         
+        # Handle case where nit is not available
+        iterations = getattr(result, 'nit', 0) or 0
+        
         return OptimizationResult(
             optimal_params=result.x,
             optimal_payoff=-result.fun,  # Negate because we minimize
             history=self.history,
             converged=result.success,
-            iterations=result.nit
+            iterations=iterations
         )
     
     def _optimize_spsa(self,

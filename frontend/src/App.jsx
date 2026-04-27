@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import axios from 'axios'
+import ParticleBackground from './components/ParticleBackground'
 
 
 const API_BASE = 'http://localhost:8000'
@@ -16,19 +17,12 @@ const games = [
     name: 'Battle of the Sexes',
     description: 'Coordination game',
     icon: '💕'
-  },
-  {
-    id: 'matching_pennies',
-    name: 'Matching Pennies',
-    description: 'Zero-sum game',
-    icon: '🪙'
   }
 ]
 
 function App() {
   const [selectedGame, setSelectedGame] = useState('prisoners_dilemma')
   const [loading, setLoading] = useState(false)
-  const [viewMode, setViewMode] = useState('visualizer')
   
   // Step execution state
   const [classicalSteps, setClassicalSteps] = useState([])
@@ -36,15 +30,21 @@ function App() {
   const [currentStep, setCurrentStep] = useState(0)
   const [isPlaying, setIsPlaying] = useState(false)
   const [playbackSpeed, setPlaybackSpeed] = useState(1000)
+  const [iterationComplete, setIterationComplete] = useState(false)
   
-  // Legacy result state
-  const [classicalResult, setClassicalResult] = useState(null)
-  const [quantumResult, setQuantumResult] = useState(null)
-  const [compareResult, setCompareResult] = useState(null)
+  // Track maximum payoffs
+  const [maxClassicalPayoff, setMaxClassicalPayoff] = useState(0)
+  const [maxQuantumPayoff, setMaxQuantumPayoff] = useState(0)
 
   // Load step data
   const loadStepData = useCallback(async () => {
     setLoading(true)
+    setIterationComplete(false)
+    setMaxClassicalPayoff(0)
+    setMaxQuantumPayoff(0)
+    setCurrentStep(0)
+    setIsPlaying(false)
+    
     try {
       const [classicalRes, quantumRes] = await Promise.all([
         axios.post(`${API_BASE}/run-classical-steps`, {
@@ -60,82 +60,54 @@ function App() {
       
       setClassicalSteps(classicalRes.data)
       setQuantumSteps(quantumRes.data)
-      setCurrentStep(0)
     } catch (error) {
       console.error('Error loading step data:', error)
     }
     setLoading(false)
   }, [selectedGame])
 
-  // Auto-play functionality
+  // Auto-play functionality - stops after one full iteration
   useEffect(() => {
     let interval
-    if (isPlaying) {
+    if (isPlaying && !iterationComplete) {
       interval = setInterval(() => {
         setCurrentStep(prev => {
           const maxStep = Math.max(
             classicalSteps.total_steps || 0,
             quantumSteps.total_steps || 0
           ) - 1
-          return prev >= maxStep ? 0 : prev + 1
+          
+          // Stop at the end of iteration
+          if (prev >= maxStep) {
+            setIsPlaying(false)
+            setIterationComplete(true)
+            return maxStep
+          }
+          return prev + 1
         })
       }, playbackSpeed)
     }
     return () => clearInterval(interval)
-  }, [isPlaying, playbackSpeed, classicalSteps, quantumSteps])
+  }, [isPlaying, playbackSpeed, classicalSteps, quantumSteps, iterationComplete])
+
+  // Track maximum payoffs
+  useEffect(() => {
+    if (classicalStepData?.payoff && classicalStepData.payoff > maxClassicalPayoff) {
+      setMaxClassicalPayoff(classicalStepData.payoff)
+    }
+    if (quantumStepData?.payoff && quantumStepData.payoff > maxQuantumPayoff) {
+      setMaxQuantumPayoff(quantumStepData.payoff)
+    }
+  }, [currentStep, classicalStepData, quantumStepData])
 
   // Load data when game changes
   useEffect(() => {
-    if (viewMode === 'visualizer') {
-      loadStepData()
-    }
-  }, [selectedGame, viewMode, loadStepData])
-
-  const runClassical = async () => {
-    setLoading(true)
-    try {
-      const response = await axios.post(`${API_BASE}/run-classical`, {
-        game_type: selectedGame
-      })
-      setClassicalResult(response.data)
-    } catch (error) {
-      console.error('Error running classical:', error)
-    }
-    setLoading(false)
-  }
-
-  const runQuantum = async () => {
-    setLoading(true)
-    try {
-      const response = await axios.post(`${API_BASE}/run-quantum`, {
-        game_type: selectedGame,
-        optimizer: 'cobyla',
-        max_iterations: 50,
-        shots: 1024
-      })
-      setQuantumResult(response.data)
-    } catch (error) {
-      console.error('Error running quantum:', error)
-    }
-    setLoading(false)
-  }
-
-  const runCompare = async () => {
-    setLoading(true)
-    try {
-      const response = await axios.post(`${API_BASE}/compare`, {
-        game_type: selectedGame,
-        shots: 1024
-      })
-      setCompareResult(response.data)
-    } catch (error) {
-      console.error('Error running comparison:', error)
-    }
-    setLoading(false)
-  }
+    loadStepData()
+  }, [selectedGame, loadStepData])
 
   const handlePrevStep = () => {
     setCurrentStep(prev => Math.max(0, prev - 1))
+    setIterationComplete(false)
   }
 
   const handleNextStep = () => {
@@ -143,11 +115,27 @@ function App() {
       classicalSteps.total_steps || 0,
       quantumSteps.total_steps || 0
     ) - 1
-    setCurrentStep(prev => Math.min(maxStep, prev + 1))
+    const newStep = Math.min(maxStep, currentStep + 1)
+    setCurrentStep(newStep)
+    
+    // Check if we've reached the end
+    if (newStep >= maxStep) {
+      setIterationComplete(true)
+    }
   }
 
   const handleStepChange = (e) => {
-    setCurrentStep(parseInt(e.target.value))
+    const newStep = parseInt(e.target.value)
+    setCurrentStep(newStep)
+    setIterationComplete(newStep >= (Math.max(classicalSteps.total_steps || 0, quantumSteps.total_steps || 0) - 1))
+  }
+
+  const handleRestart = () => {
+    setCurrentStep(0)
+    setIterationComplete(false)
+    setMaxClassicalPayoff(0)
+    setMaxQuantumPayoff(0)
+    setIsPlaying(false)
   }
 
   // Get current step data
@@ -164,25 +152,20 @@ function App() {
   const classicalStepData = getClassicalStepData()
   const quantumStepData = getQuantumStepData()
 
+  // Calculate comparison
+  const quantumAdvantage = maxClassicalPayoff > 0 
+    ? ((maxQuantumPayoff - maxClassicalPayoff) / Math.abs(maxClassicalPayoff) * 100).toFixed(1)
+    : 0
+
   return (
-    <div className="app">
+    <>
+      <ParticleBackground />
+      {/* glass overlay that sits between canvas and content */}
+      <div className="bg-glass-overlay" />
+      <div className="app">
       <header className="header">
         <h1>⚛️ QGOptimus</h1>
         <p className="subtitle">Algorithm Execution Visualizer</p>
-        <div className="mode-toggle">
-          <button 
-            className={viewMode === 'visualizer' ? 'active' : ''} 
-            onClick={() => setViewMode('visualizer')}
-          >
-            🔬 Step Visualizer
-          </button>
-          <button 
-            className={viewMode === 'compare' ? 'active' : ''} 
-            onClick={() => setViewMode('compare')}
-          >
-            📊 Compare Results
-          </button>
-        </div>
       </header>
 
       <section className="game-selection">
@@ -199,52 +182,58 @@ function App() {
         ))}
       </section>
 
-      {viewMode === 'visualizer' ? (
-        <>
-          <section className="step-controls">
-            <div className="control-group">
-              <button 
-                className="control-btn play" 
-                onClick={() => setIsPlaying(!isPlaying)}
-              >
-                {isPlaying ? '⏸ Pause' : '▶ Play'}
-              </button>
-              <button className="control-btn" onClick={handlePrevStep}>
-                ⏮ Prev
-              </button>
-              <button className="control-btn" onClick={handleNextStep}>
-                ⏭ Next
-              </button>
-            </div>
-            
-            <div className="slider-group">
-              <label>Step: {currentStep + 1}</label>
-              <input 
-                type="range" 
-                min="0" 
-                max={Math.max(
-                  (classicalSteps.total_steps || 1) - 1,
-                  (quantumSteps.total_steps || 1) - 1
-                )} 
-                value={currentStep}
-                onChange={handleStepChange}
-              />
-            </div>
-            
-            <div className="speed-control">
-              <label>Speed:</label>
-              <select 
-                value={playbackSpeed} 
-                onChange={(e) => setPlaybackSpeed(parseInt(e.target.value))}
-              >
-                <option value={2000}>Slow</option>
-                <option value={1000}>Normal</option>
-                <option value={500}>Fast</option>
-                <option value={200}>Very Fast</option>
-              </select>
-            </div>
-          </section>
+      <section className="step-controls">
+        <div className="control-group">
+          <button 
+            className="control-btn play" 
+            onClick={() => setIsPlaying(!isPlaying)}
+            disabled={iterationComplete}
+          >
+            {isPlaying ? '⏸ Pause' : '▶ Play'}
+          </button>
+          <button className="control-btn" onClick={handlePrevStep}>
+            ⏮ Prev
+          </button>
+          <button className="control-btn" onClick={handleNextStep}>
+            ⏭ Next
+          </button>
+          <button className="control-btn" onClick={handleRestart}>
+            🔄 Restart
+          </button>
+        </div>
+        
+        <div className="slider-group">
+          <label>Step: {currentStep + 1}</label>
+          <input 
+            type="range" 
+            min="0" 
+            max={Math.max(
+              (classicalSteps.total_steps || 1) - 1,
+              (quantumSteps.total_steps || 1) - 1
+            )} 
+            value={currentStep}
+            onChange={handleStepChange}
+          />
+        </div>
+        
+        <div className="speed-control">
+          <label>Speed:</label>
+          <select 
+            value={playbackSpeed} 
+            onChange={(e) => setPlaybackSpeed(parseInt(e.target.value))}
+          >
+            <option value={2000}>Slow</option>
+            <option value={1000}>Normal</option>
+            <option value={500}>Fast</option>
+            <option value={200}>Very Fast</option>
+          </select>
+        </div>
+      </section>
 
+      {loading && <div className="loading">Loading algorithm execution...</div>}
+
+      {!loading && (
+        <>
           <div className="split-screen">
             {/* Classical Side */}
             <div className="panel classical-panel">
@@ -290,7 +279,7 @@ function App() {
               </div>
 
               <div className="payoff-display">
-                <h4>Total Payoff</h4>
+                <h4>Current Payoff</h4>
                 <div className="payoff-value">{classicalStepData?.payoff?.toFixed(4) || '0.0000'}</div>
               </div>
 
@@ -306,6 +295,11 @@ function App() {
                     />
                   ))}
                 </div>
+              </div>
+
+              <div className="max-payoff-display">
+                <h4>Best Payoff Achieved</h4>
+                <div className="max-payoff-value">{maxClassicalPayoff.toFixed(4)}</div>
               </div>
             </div>
 
@@ -384,7 +378,7 @@ function App() {
               </div>
 
               <div className="payoff-display">
-                <h4>Total Payoff</h4>
+                <h4>Current Payoff</h4>
                 <div className="payoff-value quantum">{quantumStepData?.payoff?.toFixed(4) || '0.0000'}</div>
               </div>
 
@@ -401,65 +395,50 @@ function App() {
                   ))}
                 </div>
               </div>
+
+              <div className="max-payoff-display">
+                <h4>Best Payoff Achieved</h4>
+                <div className="max-payoff-value quantum">{maxQuantumPayoff.toFixed(4)}</div>
+              </div>
             </div>
           </div>
 
+          {/* Final Comparison - shown after iteration completes */}
           <section className="comparison-bar">
             <div className="comparison-item">
-              <span className="comparison-label">Classical Payoff:</span>
-              <span className="comparison-value classical">{classicalStepData?.payoff?.toFixed(4) || '-'}</span>
+              <span className="comparison-label">Classical Best:</span>
+              <span className="comparison-value classical">{maxClassicalPayoff.toFixed(4)}</span>
             </div>
             <div className="comparison-item">
-              <span className="comparison-label">Quantum Payoff:</span>
-              <span className="comparison-value quantum">{quantumStepData?.payoff?.toFixed(4) || '-'}</span>
+              <span className="comparison-label">Quantum Best:</span>
+              <span className="comparison-value quantum">{maxQuantumPayoff.toFixed(4)}</span>
             </div>
             <div className="comparison-item">
-              <span className="comparison-label">Quantum Advantage:</span>
-              <span className="comparison-value advantage">
-                {classicalStepData?.payoff && quantumStepData?.payoff 
-                  ? ((quantumStepData.payoff - classicalStepData.payoff) / Math.abs(classicalStepData.payoff) * 100).toFixed(1)
-                  : '-'
-                }%
+              <span className="comparison-label">Winner:</span>
+              <span className={`comparison-value ${maxQuantumPayoff >= maxClassicalPayoff ? 'quantum' : 'classical'}`}>
+                {maxQuantumPayoff >= maxClassicalPayoff ? '⚛️ Quantum' : '🖥️ Classical'}
+              </span>
+            </div>
+            <div className="comparison-item">
+              <span className="comparison-label">Difference:</span>
+              <span className={`comparison-value advantage ${parseFloat(quantumAdvantage) < 0 ? 'negative' : ''}`}>
+                {parseFloat(quantumAdvantage) >= 0 ? '+' : ''}{quantumAdvantage}%
               </span>
             </div>
           </section>
-        </>
-      ) : (
-        <>
-          <section className="control-panel">
-            <button className="run-btn classical" onClick={runClassical} disabled={loading}>
-              🖥️ Run Classical
-            </button>
-            <button className="run-btn quantum" onClick={runQuantum} disabled={loading}>
-              ⚛️ Run Quantum
-            </button>
-            <button className="run-btn compare" onClick={runCompare} disabled={loading}>
-              ⚖️ Compare Both
-            </button>
-          </section>
 
-          {loading && <div className="loading">Loading...</div>}
-
-          {compareResult && (
-            <section className="results">
-              <div className="result-card">
-                <h3>Classical Result</h3>
-                <p>Payoff: {compareResult.classical.payoff.toFixed(4)}</p>
-              </div>
-              <div className="result-card">
-                <h3>Quantum Result</h3>
-                <p>Payoff: {compareResult.quantum.payoff.toFixed(4)}</p>
-                <p>Parameters: θ=[{compareResult.quantum.optimal_parameters.theta.map(t => t.toFixed(3)).join(', ')}]</p>
-              </div>
-              <div className="result-card advantage">
-                <h3>Quantum Advantage</h3>
-                <p>{compareResult.advantage.percentage}%</p>
-              </div>
-            </section>
+          {iterationComplete && (
+            <div className="iteration-complete-banner">
+              <span>🎉 Iteration Complete! Review the best payoffs above.</span>
+              <button className="control-btn play" onClick={handleRestart}>
+                Run Again
+              </button>
+            </div>
           )}
         </>
       )}
     </div>
+    </>
   )
 }
 
