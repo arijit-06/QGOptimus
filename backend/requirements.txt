@@ -1,0 +1,17 @@
+# FastAPI and server
+fastapi==0.109.0
+uvicorn==0.27.0
+python-multipart==0.0.6
+
+# Quantum Computing
+qiskit
+qiskit-aer
+numpy==1.26.3
+
+# Classical optimization
+scipy==1.12.0
+scikit-learn==1.4.0
+
+# Visualization
+matplotlib==3.8.2
+pillow==10.2.0
