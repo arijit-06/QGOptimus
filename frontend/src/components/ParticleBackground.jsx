@@ -29,6 +29,8 @@ export default function ParticleBackground() {
       canvas.height = h * dpr
       canvas.style.width = `${w}px`
       canvas.style.height = `${h}px`
+      // Reset to identity BEFORE applying dpr scale, so repeated calls don't stack
+      ctx.setTransform(1, 0, 0, 1, 0, 0)
       ctx.scale(dpr, dpr)
       return { w, h }
     }

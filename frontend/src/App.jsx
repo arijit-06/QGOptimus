@@ -17,6 +17,12 @@ const games = [
     name: 'Battle of the Sexes',
     description: 'Coordination game',
     icon: '💕'
+  },
+  {
+    id: 'matching_pennies',
+    name: 'Matching Pennies',
+    description: 'Zero-sum game',
+    icon: '🪙'
   }
 ]
 
@@ -65,6 +71,20 @@ function App() {
     }
     setLoading(false)
   }, [selectedGame])
+
+  // Get current step data — declared BEFORE the effects that reference them
+  const getClassicalStepData = () => {
+    if (!classicalSteps.steps || classicalSteps.steps.length === 0) return null
+    return classicalSteps.steps[currentStep] || classicalSteps.steps[0]
+  }
+
+  const getQuantumStepData = () => {
+    if (!quantumSteps.steps || quantumSteps.steps.length === 0) return null
+    return quantumSteps.steps[currentStep] || quantumSteps.steps[0]
+  }
+
+  const classicalStepData = getClassicalStepData()
+  const quantumStepData = getQuantumStepData()
 
   // Auto-play functionality - stops after one full iteration
   useEffect(() => {
@@ -138,19 +158,7 @@ function App() {
     setIsPlaying(false)
   }
 
-  // Get current step data
-  const getClassicalStepData = () => {
-    if (!classicalSteps.steps || classicalSteps.steps.length === 0) return null
-    return classicalSteps.steps[currentStep] || classicalSteps.steps[0]
-  }
-
-  const getQuantumStepData = () => {
-    if (!quantumSteps.steps || quantumSteps.steps.length === 0) return null
-    return quantumSteps.steps[currentStep] || quantumSteps.steps[0]
-  }
-
-  const classicalStepData = getClassicalStepData()
-  const quantumStepData = getQuantumStepData()
+  // (step data helpers moved above the effects that consume them)
 
   // Calculate comparison
   const quantumAdvantage = maxClassicalPayoff > 0 
@@ -286,14 +294,18 @@ function App() {
               <div className="graph-display">
                 <h4>Payoff Convergence</h4>
                 <div className="simple-chart">
-                  {classicalSteps.payoff_history?.map((payoff, idx) => (
-                    <div 
-                      key={idx} 
-                      className={`chart-bar ${idx === currentStep ? 'current' : ''}`}
-                      style={{ height: `${(payoff / Math.max(...classicalSteps.payoff_history, 1)) * 100}%` }}
-                      title={`Step ${idx + 1}: ${payoff.toFixed(4)}`}
-                    />
-                  ))}
+                  {classicalSteps.payoff_history?.map((payoff, idx) => {
+                    const maxVal = Math.max(...classicalSteps.payoff_history.map(Math.abs), 1)
+                    const heightPct = Math.max(0, (payoff / maxVal) * 100)
+                    return (
+                      <div 
+                        key={idx} 
+                        className={`chart-bar ${idx === currentStep ? 'current' : ''}`}
+                        style={{ height: `${heightPct}%` }}
+                        title={`Step ${idx + 1}: ${payoff.toFixed(4)}`}
+                      />
+                    )
+                  })}
                 </div>
               </div>
 
@@ -338,10 +350,10 @@ function App() {
                   {quantumSteps.circuit_data?.gates?.map((gate, idx) => (
                     <div key={idx} className={`gate ${gate.type.toLowerCase()}`}>
                       <span className="gate-type">{gate.type}</span>
-                      {gate.qubit !== null && <span className="gate-qubit">Q{gate.qubit}</span>}
-                      {gate.control !== null && <span className="gate-control">{gate.control}→{gate.target}</span>}
-                      {gate.theta && <span className="gate-param">θ={gate.theta.toFixed(2)}</span>}
-                      {gate.phi && <span className="gate-param">φ={gate.phi.toFixed(2)}</span>}
+                      {gate.qubit != null && <span className="gate-qubit">Q{gate.qubit}</span>}
+                      {gate.control != null && <span className="gate-control">{gate.control}→{gate.target}</span>}
+                      {gate.theta != null && <span className="gate-param">θ={gate.theta.toFixed(2)}</span>}
+                      {gate.phi != null && <span className="gate-param">φ={gate.phi.toFixed(2)}</span>}
                     </div>
                   ))}
                 </div>
@@ -385,14 +397,18 @@ function App() {
               <div className="graph-display">
                 <h4>Payoff Convergence</h4>
                 <div className="simple-chart">
-                  {quantumSteps.payoff_history?.map((payoff, idx) => (
-                    <div 
-                      key={idx} 
-                      className={`chart-bar quantum ${idx === currentStep ? 'current' : ''}`}
-                      style={{ height: `${(payoff / Math.max(...quantumSteps.payoff_history, 1)) * 100}%` }}
-                      title={`Step ${idx + 1}: ${payoff.toFixed(4)}`}
-                    />
-                  ))}
+                  {quantumSteps.payoff_history?.map((payoff, idx) => {
+                    const maxVal = Math.max(...quantumSteps.payoff_history.map(Math.abs), 1)
+                    const heightPct = Math.max(0, (payoff / maxVal) * 100)
+                    return (
+                      <div 
+                        key={idx} 
+                        className={`chart-bar quantum ${idx === currentStep ? 'current' : ''}`}
+                        style={{ height: `${heightPct}%` }}
+                        title={`Step ${idx + 1}: ${payoff.toFixed(4)}`}
+                      />
+                    )
+                  })}
                 </div>
               </div>
 
@@ -430,7 +446,7 @@ function App() {
           {iterationComplete && (
             <div className="iteration-complete-banner">
               <span>🎉 Iteration Complete! Review the best payoffs above.</span>
-              <button className="control-btn play" onClick={handleRestart}>
+              <button className="control-btn play" onClick={loadStepData}>
                 Run Again
               </button>
             </div>

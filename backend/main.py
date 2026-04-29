@@ -489,7 +489,7 @@ async def run_classical_steps(request: StepExecutionRequest):
         code_display = step_solver.get_code_display(request.game_type)
         
         # Extract payoff history
-        payoff_history = [step['payoff'] for step in steps if step['payoff'] > 0]
+        payoff_history = [step['payoff'] for step in steps if step['payoff'] != 0]
         
         return {
             "game": request.game_type,
@@ -532,7 +532,7 @@ async def run_quantum_steps(request: StepExecutionRequest):
         circuit_data = final_step.get('state', {}).get('circuit', {})
         
         # Extract payoff history
-        payoff_history = [step['payoff'] for step in steps if step['payoff'] > 0]
+        payoff_history = [step['payoff'] for step in steps if step['payoff'] != 0]
         
         return {
             "game": request.game_type,
